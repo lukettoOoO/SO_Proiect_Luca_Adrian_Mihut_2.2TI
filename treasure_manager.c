@@ -89,8 +89,10 @@ void add_hunt(char *hunt_id)
     }
 }
 
-void add_treasure(char *hunt_id, char *id, char *username, char *latitude, char *longitude, char *clue, char *value) 
+void add_treasure(char *hunt_id) 
 {
+    printf("enter id, username, latitude, longitude, clue, value (in this order)\n");
+
     char path[128];
     memset(path, 0, sizeof(path));
     strcat(path, "./");
@@ -110,19 +112,91 @@ void add_treasure(char *hunt_id, char *id, char *username, char *latitude, char 
     }
 
     Treasure treasure;
-    treasure.id = atoi(id);
-    strcpy(treasure.username, username);
-    treasure.latitude = atof(latitude);
-    treasure.longitude = atof(longitude);
-    strcpy(treasure.clue, clue);
-    treasure.value = atoi(value);
+    char buffer[256]; 
+
+    if (read(STDIN_FILENO, buffer, sizeof(buffer)) == -1) 
+    {
+        perror("(add_treasure - read ID)");
+        close(treasure_fd);
+        exit(EXIT_FAILURE);
+    }
+    treasure.id = atoi(buffer);
+    buffer[strcspn(buffer, "\n")] = 0;
+    char log_msg[256];
+    memset(log_msg, 0, sizeof(log_msg));
+    strcat(log_msg, "Added treasure to hunt ");
+    strcat(log_msg, hunt_id);
+    strcat(log_msg, " - id=");
+    strcat(log_msg, buffer);
+
+    memset(buffer, 0, sizeof(buffer));
+    if (read(STDIN_FILENO, buffer, sizeof(buffer)) == -1) 
+    {
+        perror("(add_treasure - read username)");
+        close(treasure_fd);
+        exit(EXIT_FAILURE);
+    }
+    buffer[strcspn(buffer, "\n")] = 0;
+    strcpy(treasure.username, buffer);
+    strcat(log_msg, ", username='");
+    strcat(log_msg, treasure.username);
+
+    memset(buffer, 0, sizeof(buffer));
+    if (read(STDIN_FILENO, buffer, sizeof(buffer)) == -1) 
+    {
+        perror("(add_treasure - read latitude)");
+        close(treasure_fd);
+        exit(EXIT_FAILURE);
+    }
+    treasure.latitude = atof(buffer);
+    buffer[strcspn(buffer, "\n")] = 0;
+    strcat(log_msg, "', latitude=");
+    strcat(log_msg, buffer);
+
+    memset(buffer, 0, sizeof(buffer));
+    if (read(STDIN_FILENO, buffer, sizeof(buffer)) == -1) 
+    {
+        perror("(add_treasure - read longitude)");
+        close(treasure_fd);
+        exit(EXIT_FAILURE);
+    }
+    treasure.longitude = atof(buffer);
+    buffer[strcspn(buffer, "\n")] = 0;
+    strcat(log_msg, ", longitude=");
+    strcat(log_msg, buffer);
+
+    memset(buffer, 0, sizeof(buffer));
+    if (read(STDIN_FILENO, buffer, sizeof(buffer)) == -1) 
+    {
+        perror("(add_treasure - read clue)");
+        close(treasure_fd);
+        exit(EXIT_FAILURE);
+    }
+    buffer[strcspn(buffer, "\n")] = 0;
+    strcpy(treasure.clue, buffer);
+    strcat(log_msg, ", clue='");
+    strcat(log_msg, treasure.clue);
+
+    memset(buffer, 0, sizeof(buffer));
+    if (read(STDIN_FILENO, buffer, sizeof(buffer)) == -1) 
+    {
+        perror("(add_treasure - read value)");
+        close(treasure_fd);
+        exit(EXIT_FAILURE);
+    }
+    treasure.value = atoi(buffer);
+    buffer[strcspn(buffer, "\n")] = 0;
+    strcat(log_msg, "', value=");
+    strcat(log_msg, buffer);
 
     if (write(treasure_fd, &treasure, sizeof(treasure)) == -1) 
     {
         perror("(add_treasure - write)");
+        close(treasure_fd);
         exit(EXIT_FAILURE);
     }
     close(treasure_fd);
+
 
     char log_file[128];
     memset(log_file, 0, sizeof(log_file));
@@ -136,22 +210,6 @@ void add_treasure(char *hunt_id, char *id, char *username, char *latitude, char 
         exit(EXIT_FAILURE);
     }
 
-    char log_msg[256];
-    memset(log_msg, 0, sizeof(log_msg));
-    strcat(log_msg, "Added treasure to hunt ");
-    strcat(log_msg, hunt_id);
-    strcat(log_msg, " - id=");
-    strcat(log_msg, id);
-    strcat(log_msg, ", username='");
-    strcat(log_msg, username);
-    strcat(log_msg, "', latitude=");
-    strcat(log_msg, latitude);
-    strcat(log_msg, ", longitude=");
-    strcat(log_msg, longitude);
-    strcat(log_msg, ", clue='");
-    strcat(log_msg, clue);
-    strcat(log_msg, "', value=");
-    strcat(log_msg, value);
     strcat(log_msg, "\n");
     log_msg[strlen(log_msg)] = '\0';
     if (write(log_fd, log_msg, strlen(log_msg)) == -1) 
@@ -524,7 +582,7 @@ int main(int argc, char **argv)
         }
         if(dir) 
             closedir(dir);
-        add_treasure(argv[2], argv[3], argv[4], argv[5], argv[6], argv[7], argv[8]);
+        add_treasure(argv[2]);
     } 
     else if (argc >= 2 && strcmp("--list", argv[1]) == 0) 
     {
