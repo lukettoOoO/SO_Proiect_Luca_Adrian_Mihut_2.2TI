@@ -1,0 +1,11 @@
+./treasure_manager --add hunt002 1 bia 67 29 dreapta 800
+./treasure_manager --add hunt001 0 luca 90 30 "sus si jos" 800
+./treasure_manager --add hunt001 4 marc 45 45 "stanga dreapta" 200
+./treasure_manager --list hunt001
+./treasure_manager --view hunt001 4 
+./treasure_manager --remove_hunt hunt001
+./treasure_manager --add hunt001 0 luca 90 30 "sus si jos" 800 
+./treasure_manager --add hunt001 4 marc 45 45 "stanga dreapta" 200
+./treasure_manager --list hunt001
+./treasure_manager --remove_treasure hunt001 0
+./treasure_manager --list hunt001
