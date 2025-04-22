@@ -271,6 +271,7 @@ void list(char *hunt_id)
         free(treasure);
         exit(EXIT_FAILURE);
     }
+    printf("treausre count: %d\n", treasure_count);
     printf("\n");
     for(int i = 0; i < treasure_count; i++)
     {
