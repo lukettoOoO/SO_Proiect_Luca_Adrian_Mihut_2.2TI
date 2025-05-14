@@ -12,6 +12,7 @@
 #define MAX_CLUE_LEN 256
 #define MAX_HUNT_ID_LEN 128
 #define MAX_TREASURE_ID_LEN 32
+#define BUFFER_SIZE 1024
 
 typedef struct {
     int id;
@@ -23,20 +24,48 @@ typedef struct {
 } Treasure;
 
 pid_t monitor_pid = 0;
+int pipe_fd[2];
 
-void exec_list(char *hunt_id)
+void exec_calculate_score()
+{
+    pid_t calculate_score_pid = 0;
+    if((calculate_score_pid = fork()) == -1)
+    {
+        perror("(exec_calculate_score) fork");
+        exit(1);
+    }
+    if(calculate_score_pid == 0)
+    {
+        dup2(pipe_fd[1], STDOUT_FILENO);
+        close(pipe_fd[0]);
+        close(pipe_fd[1]);
+
+        execlp("./calculate_score", "./calculate_score", NULL);
+        perror("(exec_calculate_score) execlp");
+        exit(1);
+    }
+    int status;
+    waitpid(calculate_score_pid, &status, 0);
+}
+
+void exec_list(char *hunt_id) //lists all treasures from a hunt
 {
     pid_t list_pid = 0;
     if((list_pid = fork()) == -1)
     {
-        perror("(list_hunts) fork:");
+        perror("(list_hunts) fork");
         exit(1);
     }
     if(list_pid == 0)
     {
+        //redirect stdout to the write end of the pipe
+        dup2(pipe_fd[1], STDOUT_FILENO); //send stdout to the pipe
+        close(pipe_fd[0]);
+        close(pipe_fd[1]);
+
         execlp("./treasure_manager", "./treasure_manager", "--list", hunt_id, NULL);
         //the program shouldn't reach this part only if exec failed
-        perror("(exec_list) execlp:");
+        perror("(exec_list) execlp");
         exit(1);
     }
     int status;
@@ -50,13 +79,14 @@ void list_hunts(int sig)
     DIR *dir = opendir(".");
     if(dir == NULL)
     {
-        perror("(list_hunts) opendir:");
+        perror("(list_hunts) opendir");
         exit(1);
     }
     struct dirent *d;
     d = readdir(dir);
     while(d != NULL)
     {
+        //in the current directory, only hunts are directories
         if(d->d_type == DT_DIR && strcmp(d->d_name, ".") != 0 && strcmp(d->d_name, "..") != 0 && strcmp(d->d_name, ".git") != 0)
         {
             //printf("%s\n", d->d_name);
@@ -107,9 +137,14 @@ void exec_view(char *hunt_id, char *id)
     }
     if(view_pid == 0)
     {
+        //redirect stdout to the write end of the pipe
+        dup2(pipe_fd[1], STDOUT_FILENO);
+        close(pipe_fd[0]);
+        close(pipe_fd[1]);
+
         execlp("./treasure_manager", "./treasure_manager", "--view", hunt_id, id, NULL);
         //the program shouldn't reach this part only if exec failed
-        perror("(exec_view) execlp:");
+        perror("(exec_view) execlp");
         exit(1);
     }
     int status;
@@ -176,6 +211,12 @@ void start_monitor()
         printf("Monitor already running\n");
         return;
     }
+    //creating pipe to send output from child processes back to the parent process
+    if(pipe(pipe_fd) < 0)
+    {
+        perror("(start_monitor) Error creating pipe:");
+        exit(1);
+    }
     if((monitor_pid = fork()) < 0) //creating monitor process
     {
         perror("(start_monitor) Error creating monitor process:");
@@ -184,6 +225,10 @@ void start_monitor()
     if(monitor_pid == 0)
     {
         printf("Monitor process started\n");
+
+        //close both ends of the pipe in the monitor since in this function, the child process only reacts to signals, so we don't actually need the pipe here
+        close(pipe_fd[0]);
+        close(pipe_fd[1]);
 
         struct sigaction sa_list_hunts;
         sa_list_hunts.sa_handler = list_hunts; //sa_handler - pointer to the function that will be called when the process receives the specific signal
@@ -218,12 +263,15 @@ void start_monitor()
         while(1); //infinite loop - monitor process only responds to signals
         exit(0);
     }
+    //close the write end in the parent
+    close(pipe_fd[1]);
 }
 
 int main(void)
 {
     int cmd = -1;
     int status;
+    char buffer[BUFFER_SIZE];
 
     while(1)
     {
@@ -233,7 +281,8 @@ int main(void)
         printf("2 - List hunts\n");
         printf("3 - List treasures\n");
         printf("4 - View treasure\n");
-        printf("5 - Stop monitor\n");
+        printf("5 - Calculate score\n");
+        printf("6 - Stop monitor\n");
         printf("0 - Exit\n");
         printf("\n");
 
@@ -250,8 +299,21 @@ int main(void)
             {
                 printf("Sending command signal to monitor...\n\n");
                 if(kill(monitor_pid, SIGUSR1) == -1) //sending SIGUSR1 signal to monitor process
-                    perror("(main) kill SIGUSR1:");
+                    perror("(main) kill SIGUSR1");
                 //list_hunts();
+                
+                memset(buffer, 0, BUFFER_SIZE);
+                ssize_t bytes_read;
+                while((bytes_read = read(pipe_fd[0], buffer, BUFFER_SIZE - 1)) > 0)
+                {
+                    buffer[bytes_read] = '\0';
+                    printf("\n%s\n", buffer);
+                    memset(buffer, 0, BUFFER_SIZE);
+                }
+                if(bytes_read == -1)
+                {
+                    perror("(main) read from pipe");
+                }       
             }
         }
         else if(cmd == 3)
@@ -273,7 +335,7 @@ int main(void)
                 int fd = open(temp_filename, O_WRONLY | O_CREAT | O_TRUNC, 0600);
                 if(fd == -1)
                 {
-                    perror("(main) open temp:");
+                    perror("(main) open temp");
                     exit(1);
                 }
                 //printf("STRING: %s\n", cmd_hunt_id);
@@ -282,7 +344,20 @@ int main(void)
 
 
                 if(kill(monitor_pid, SIGUSR2) == -1)
-                    perror("(main) kill SIGUSR2:");
+                    perror("(main) kill SIGUSR2");
+                
+                memset(buffer, 0, BUFFER_SIZE);
+                ssize_t bytes_read;
+                while((bytes_read = read(pipe_fd[0], buffer, BUFFER_SIZE - 1)) > 0)
+                {
+                    buffer[bytes_read] = '\0';
+                    printf("\n%s\n", buffer);
+                    memset(buffer, 0, BUFFER_SIZE);
+                }
+                if(bytes_read == -1)
+                {
+                    perror("(main) read from pipe");
+                }
             }
         }
         else if(cmd == 4)
@@ -299,7 +374,7 @@ int main(void)
                 getchar();
                 fgets(hunt_id, MAX_HUNT_ID_LEN, stdin);
                 hunt_id[strcspn(hunt_id, "\n")] = '\0';
-                printf("Please enter treasure ID:\n");
+                printf("Please enter treasure ID\n");
                 fgets(id, MAX_TREASURE_ID_LEN, stdin);
                 id[strcspn(id, "\n")] = '\0';
 
@@ -327,9 +402,27 @@ int main(void)
 
                 if (kill(monitor_pid, SIGPIPE) == -1)
                     perror("(main) kill SIGPIPE");
+
+                memset(buffer, 0, BUFFER_SIZE);
+                ssize_t bytes_read;
+                while((bytes_read = read(pipe_fd[0], buffer, BUFFER_SIZE - 1)) > 0)
+                {
+                    buffer[bytes_read] = '\0';
+                    printf("\n%s\n", buffer);
+                    memset(buffer, 0, BUFFER_SIZE);
+                }
+                if(bytes_read == -1)
+                {
+                    perror("(main) read from pipe");
+                }
             }
         }
         else if(cmd == 5)
+        {
+            printf("Calculating score...\n\n");
+            exec_calculate_score();
+        }
+        else if(cmd == 6)
         {
             if(monitor_pid == 0)
                 printf("Monitor not running. Please start it first!\n");
@@ -342,9 +435,15 @@ int main(void)
                 else
                 {
                     if(WIFEXITED(status))
-                        printf("Montior process exited with status %d\n", WEXITSTATUS(status));
+                    {
+                        printf("Monitor process exited with status %d\n", WEXITSTATUS(status));
+                        close(pipe_fd[0]);
+                    }
                     else if(WIFSIGNALED(status))
+                    {
                         printf("Monitor process terminated by signal %d\n", WTERMSIG(status));
+                        close(pipe_fd[0]);
+                    }
                 }
                 monitor_pid = 0;
             }
