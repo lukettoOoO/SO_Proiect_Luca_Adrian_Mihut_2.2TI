@@ -569,10 +569,6 @@ int main(int argc, char **argv)
 {
     if (argc >= 2 && strcmp("--add", argv[1]) == 0) 
     {
-        if (argc != 9) 
-        {
-            invalid_input_err();
-        }
         char path[128] = "./";
         strcat(path, argv[2]);
         path[strlen(path)] = '\0';
